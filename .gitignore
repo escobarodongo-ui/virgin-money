@@ -1,0 +1,6 @@
+node_modules
+dist
+tests/.cache
+.DS_Store
+*.local
+node_modules/.cache
