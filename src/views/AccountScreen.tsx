@@ -69,7 +69,6 @@ export function AccountScreen({
         showCents={showCents}
         detailsOpen={detailsOpen}
         roundUpsOn={roundUpsOn}
-        scheduledOn={scheduledOn}
         payWithPoints={payWithPoints}
         onToggleDetails={onToggleDetails}
         onScheduled={() => setSheet("scheduled")}

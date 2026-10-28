@@ -10,7 +10,6 @@ export function AccountSummary({
   showCents,
   detailsOpen,
   roundUpsOn,
-  scheduledOn,
   payWithPoints,
   onToggleDetails,
   onScheduled,
@@ -24,7 +23,6 @@ export function AccountSummary({
   showCents: boolean;
   detailsOpen: boolean;
   roundUpsOn: boolean;
-  scheduledOn: boolean;
   payWithPoints: boolean;
   onToggleDetails: () => void;
   onScheduled: () => void;
@@ -52,14 +50,7 @@ export function AccountSummary({
           {formatBalance(balance, showCents)}
         </div>
         {detailsOpen && (
-          <AccountDetailsPanel
-            account={account}
-            roundUpsOn={roundUpsOn}
-            scheduledOn={scheduledOn}
-            payWithPoints={payWithPoints}
-            onScheduled={onScheduled}
-            onRoundUps={onToggleRoundUps}
-          />
+          <AccountDetailsPanel account={account} />
         )}
         <button
           type="button"
