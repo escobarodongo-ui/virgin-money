@@ -29,7 +29,7 @@ export function VerticalEllipsis() {
 
 export function ReceiptIcon() {
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" className="text-brand" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true" className="text-brand" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
       <path d="M7 3.5h10a1 1 0 0 1 1 1V20l-2-1.3-2 1.3-2-1.3-2 1.3-2-1.3-2 1.3V4.5a1 1 0 0 1 1-1Z" />
       <path d="M9.2 8h5.6M9.2 11.5h5.6M9.2 15h3.4" />
     </svg>

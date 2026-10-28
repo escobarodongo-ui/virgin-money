@@ -38,13 +38,13 @@ function NavIcon({ id, active }: { id: TabId; active: boolean }) {
   if (id === "accounts") {
     if (active) {
       return (
-        <svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true">
-          <rect x="3" y="3" width="20" height="20" rx="5" fill="var(--color-brand)" />
+        <svg width="22" height="22" viewBox="0 0 22 22" aria-hidden="true">
+          <rect x="1.25" y="1.25" width="19.5" height="19.5" rx="2.5" fill="var(--color-brand)" />
         </svg>
       );
     }
     return (
-      <svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true" fill="none" stroke="#1c1c1e" strokeWidth="1.6">
+      <svg width="22" height="22" viewBox="0 0 26 26" aria-hidden="true" fill="none" stroke="#1c1c1e" strokeWidth="1.6">
         <rect x="4" y="4" width="7" height="7" rx="1.4" />
         <rect x="15" y="4" width="7" height="7" rx="1.4" />
         <rect x="4" y="15" width="7" height="7" rx="1.4" />
@@ -53,8 +53,8 @@ function NavIcon({ id, active }: { id: TabId; active: boolean }) {
     );
   }
   const common = {
-    width: 26,
-    height: 26,
+    width: 22,
+    height: 22,
     viewBox: "0 0 26 26",
     fill: "none",
     stroke,

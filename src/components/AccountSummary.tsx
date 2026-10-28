@@ -37,7 +37,7 @@ export function AccountSummary({
         <div className="px-4 pt-3 text-[15px] font-semibold text-ink">{account.name}</div>
         <button
           type="button"
-          className="flex w-full items-center gap-2 px-4 py-2 text-left"
+          className="flex w-full items-center gap-2 px-4 pt-1.5 pb-1 text-left"
           aria-expanded={detailsOpen}
           aria-controls="account-details"
           onClick={onToggleDetails}
@@ -46,7 +46,7 @@ export function AccountSummary({
           <span className="text-[13px] font-medium text-ink">{account.name}</span>
           <span className="ml-auto min-w-0 truncate text-[13px] text-ink-soft">{account.displayIdentifier}</span>
         </button>
-        <div className="px-4 pt-1 pb-3 text-[34px] leading-none font-bold tracking-tight text-ink">
+        <div className="px-4 pt-0.5 pb-2.5 text-[34px] leading-none font-bold tracking-tight text-ink">
           {formatBalance(balance, showCents)}
         </div>
         {detailsOpen && (

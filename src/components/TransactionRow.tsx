@@ -16,7 +16,7 @@ export function TransactionRow({
     <button
       type="button"
       onClick={() => onSelect(transaction)}
-      className="flex w-full items-start gap-3 border-b border-[#ededed] px-4 py-2.5 text-left active:bg-[#fafafa]"
+      className="flex w-full items-start gap-5 border-b border-[#ededed] px-4 py-3.5 text-left active:bg-[#fafafa]"
     >
       <span className="mt-0.5 shrink-0">
         <ReceiptIcon />
