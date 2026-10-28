@@ -1,0 +1,61 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+  --font-virgin: "Caveat", cursive;
+  --color-brand: oklch(57.5% 0.22 31);
+  --color-app-bg: oklch(95.5% 0.004 285);
+  --color-ink: oklch(27% 0.01 285);
+  --color-ink-soft: oklch(58% 0.008 285);
+  --color-line: oklch(92.5% 0.004 285);
+  --color-positive: oklch(38% 0.17 285);
+  --color-nav-ink: oklch(45% 0.008 285);
+  --color-background: oklch(100% 0 0);
+  --color-foreground: oklch(12.9% 0.042 264.695);
+  --color-primary-foreground: oklch(98.4% 0.003 247.858);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+.font-virgin {
+  font-family: "Caveat", cursive;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  background: var(--color-foreground);
+  color: var(--color-ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: inherit;
+}
+
+button:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+
+#transaction-search:focus,
+#transaction-search:focus-visible {
+  outline: none;
+}
+
+#root {
+  min-height: 100%;
+}
