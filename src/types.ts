@@ -23,7 +23,7 @@ export interface Transaction {
   location?: string;
   category: Category;
   status: TransactionStatus;
-  /** Signed AUD amount. Credits are positive, debits are negative. */
+  /** Signed USD amount. Credits are positive, debits are negative. */
   amount: number;
   postedAt: string;
   reference: string;

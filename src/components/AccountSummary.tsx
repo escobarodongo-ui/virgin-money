@@ -48,6 +48,9 @@ export function AccountSummary({
           <span className="text-[13px] font-medium text-ink">{account.name}</span>
           <span className="ml-auto min-w-0 truncate text-[13px] text-ink-soft">{account.displayIdentifier}</span>
         </button>
+        <div className="px-4 pt-1 pb-3 text-[34px] leading-none font-bold tracking-tight text-ink">
+          {formatBalance(balance, showCents)}
+        </div>
         {detailsOpen && (
           <AccountDetailsPanel
             account={account}
@@ -58,9 +61,6 @@ export function AccountSummary({
             onRoundUps={onToggleRoundUps}
           />
         )}
-        <div className="px-4 pt-1 pb-3 text-[34px] leading-none font-bold tracking-tight text-ink">
-          {formatBalance(balance, showCents)}
-        </div>
         <button
           type="button"
           onClick={onScheduled}
