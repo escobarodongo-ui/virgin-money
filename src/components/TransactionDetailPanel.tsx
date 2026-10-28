@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import type { Transaction } from '../data/transactions'
 import { formatCurrency } from '../utils/currency'
 import { formatDateTime } from '../utils/dates'
@@ -19,11 +20,20 @@ function Field({ label, value }: { label: string; value: string }) {
 }
 
 export function TransactionDetailPanel({ transaction, onClose }: TransactionDetailPanelProps) {
+  useEffect(() => {
+    if (!transaction) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [transaction, onClose])
+
   if (!transaction) return null
 
   return (
     <div className="sheet" role="dialog" aria-modal="true" aria-label="Transaction details">
-      <button type="button" className="sheet__handle-space" aria-label="Close" onClick={onClose} />
+      <button type="button" className="sheet__handle-space" aria-label="Dismiss transaction details" onClick={onClose} />
       <div className="sheet__panel">
         <div
           style={{
@@ -34,7 +44,13 @@ export function TransactionDetailPanel({ transaction, onClose }: TransactionDeta
             padding: '0 13px',
           }}
         >
-          <button type="button" className="text-brand" style={{ textAlign: 'left', fontSize: 13, fontWeight: 600 }} onClick={onClose}>
+          <button
+            type="button"
+            className="text-brand"
+            style={{ textAlign: 'left', fontSize: 13, fontWeight: 600 }}
+            onClick={onClose}
+            aria-label="Close transaction details"
+          >
             Close
           </button>
           <h2 className="text-ink" style={{ margin: 0, textAlign: 'center', fontSize: 13, fontWeight: 500 }}>

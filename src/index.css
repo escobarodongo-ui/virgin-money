@@ -417,6 +417,7 @@ img {
 }
 
 .tx-row__title {
+  display: block;
   font-size: 15px;
   font-weight: 500;
   line-height: 19px;
@@ -425,6 +426,7 @@ img {
 }
 
 .tx-row__sub {
+  display: block;
   margin-top: 2px;
   font-size: 13.5px;
   color: var(--ink-soft);

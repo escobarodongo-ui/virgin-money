@@ -23,7 +23,10 @@ export function AccountDetailsPanel({
         onClick={onToggle}
         right={
           <>
-            <span className="text-ink-soft" style={{ fontSize: 13 }}>
+            <span
+              className="text-ink-soft"
+              style={{ fontSize: 13, maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+            >
               {account.maskedIdentifier}
             </span>
             <OverflowDotsIcon />
