@@ -52,22 +52,28 @@ export function StatementIcon() {
   );
 }
 
-export function TransferMarkIcon() {
+export function FromPersonIcon() {
   return (
-    <svg {...rose} strokeWidth={1.6}>
-      <path d="M8.2 8.4c1.8-2.6 6.4-2.8 8.4-.4" />
-      <path d="M14.2 5.6 17.2 8.2l-3.2 1.4" />
-      <path d="M15.8 15.6c-1.8 2.6-6.4 2.8-8.4.4" />
-      <path d="M9.8 18.4 6.8 15.8l3.2-1.4" />
+    <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
+      <g fill="#c56b76">
+        <circle cx="15.6" cy="6.7" r="2.15" />
+        <path d="M11.4 11.4c1.5-.7 3.1-.8 4.4-.2 1.3 1.8 2 3.6 2.2 5.8h-6.2c.2-1.5.5-3 .1-4.2-.3-.8-.1-1.2-.5-1.4Z" />
+        <circle cx="9.1" cy="8.5" r="2.55" />
+        <path d="M3.6 18.8c.35-3.7 2.55-5.7 5.5-5.7s5.05 2 5.45 5.7H3.6Z" />
+      </g>
     </svg>
   );
 }
 
-export function TransactionGlyph({ category }: { category: Category }) {
-  if (category === "incoming_transfer" || category === "outgoing_transfer" || category === "internal_transfer") {
-    return <TransferMarkIcon />;
-  }
-  return <StatementIcon />;
+export function TransactionGlyph({
+  description,
+  secondary,
+}: {
+  description: string;
+  secondary?: string;
+}) {
+  const fromPerson = description.startsWith("From:") || (secondary?.startsWith("From:") ?? false);
+  return fromPerson ? <FromPersonIcon /> : <StatementIcon />;
 }
 
 export function MiniCardIcon() {

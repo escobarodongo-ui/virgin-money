@@ -19,7 +19,7 @@ export function TransactionRow({
       className="flex w-full items-start gap-5 border-b border-[#ededed] px-4 py-3.5 text-left active:bg-[#fafafa]"
     >
       <span className="mt-0.5 shrink-0">
-        <TransactionGlyph category={transaction.category} />
+        <TransactionGlyph description={transaction.description} secondary={transaction.secondary} />
       </span>
       <span className="min-w-0 flex-1">
         <span className="block truncate text-[14px] leading-[18px] font-medium text-ink">{transaction.description}</span>
