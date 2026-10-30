@@ -11,29 +11,63 @@ const stroke = {
 
 export function BackIcon() {
   return (
-    <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true" {...stroke} strokeWidth={2.2}>
-      <path d="M15 5 8 12l7 7" />
+    <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M19 12H6" />
+      <path d="M11 6.5 5.5 12 11 17.5" />
     </svg>
   );
 }
 
 export function VerticalEllipsis() {
   return (
-    <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
-      <circle cx="12" cy="5.2" r="1.45" fill="currentColor" />
-      <circle cx="12" cy="12" r="1.45" fill="currentColor" />
-      <circle cx="12" cy="18.8" r="1.45" fill="currentColor" />
+    <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.7">
+      <circle cx="12" cy="12" r="8.2" />
+      <circle cx="8.2" cy="12" r="1.05" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="12" r="1.05" fill="currentColor" stroke="none" />
+      <circle cx="15.8" cy="12" r="1.05" fill="currentColor" stroke="none" />
     </svg>
   );
 }
 
-export function ReceiptIcon() {
+const rose = {
+  width: 22,
+  height: 22,
+  viewBox: "0 0 24 24",
+  fill: "none",
+  stroke: "#c56b76",
+  strokeWidth: 1.5,
+  strokeLinecap: "round" as const,
+  strokeLinejoin: "round" as const,
+  "aria-hidden": true as const,
+};
+
+export function StatementIcon() {
   return (
-    <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true" className="text-brand" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M7 3.5h10a1 1 0 0 1 1 1V20l-2-1.3-2 1.3-2-1.3-2 1.3-2-1.3-2 1.3V4.5a1 1 0 0 1 1-1Z" />
-      <path d="M9.2 8h5.6M9.2 11.5h5.6M9.2 15h3.4" />
+    <svg {...rose}>
+      <path d="M8 4.2h2.2M13.8 4.2H16" />
+      <rect x="4.2" y="5.4" width="15.6" height="14.2" rx="1.8" />
+      <path d="M4.2 9.4h15.6" />
+      <path d="M13.2 15.2h3.4" />
     </svg>
   );
+}
+
+export function TransferMarkIcon() {
+  return (
+    <svg {...rose} strokeWidth={1.6}>
+      <path d="M8.2 8.4c1.8-2.6 6.4-2.8 8.4-.4" />
+      <path d="M14.2 5.6 17.2 8.2l-3.2 1.4" />
+      <path d="M15.8 15.6c-1.8 2.6-6.4 2.8-8.4.4" />
+      <path d="M9.8 18.4 6.8 15.8l3.2-1.4" />
+    </svg>
+  );
+}
+
+export function TransactionGlyph({ category }: { category: Category }) {
+  if (category === "incoming_transfer" || category === "outgoing_transfer" || category === "internal_transfer") {
+    return <TransferMarkIcon />;
+  }
+  return <StatementIcon />;
 }
 
 export function MiniCardIcon() {
@@ -66,19 +100,19 @@ export function ChevronIcon() {
 
 export function DotsIcon() {
   return (
-    <svg width="4" height="16" viewBox="0 0 4 16" aria-hidden="true" className="text-ink">
-      <circle cx="2" cy="2" r="1.6" fill="currentColor" />
-      <circle cx="2" cy="8" r="1.6" fill="currentColor" />
-      <circle cx="2" cy="14" r="1.6" fill="currentColor" />
+    <svg width="4" height="16" viewBox="0 0 4 16" aria-hidden="true" className="text-[#8e8e93]">
+      <circle cx="2" cy="2.2" r="1.35" fill="currentColor" />
+      <circle cx="2" cy="8" r="1.35" fill="currentColor" />
+      <circle cx="2" cy="13.8" r="1.35" fill="currentColor" />
     </svg>
   );
 }
 
 export function SearchIcon() {
   return (
-    <svg width="17" height="17" viewBox="0 0 17 17" aria-hidden="true" className="text-ink" {...stroke}>
-      <circle cx="7.2" cy="7.2" r="5.7" />
-      <path d="m11.4 11.4 4.3 4.3" />
+    <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true" fill="none" stroke="#8e8e93" strokeWidth="1.6" strokeLinecap="round">
+      <circle cx="7.6" cy="7.6" r="5.2" />
+      <path d="m11.6 11.6 3.6 3.6" />
     </svg>
   );
 }

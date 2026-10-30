@@ -1,6 +1,6 @@
 import type { Transaction } from "../types";
 import { formatSignedAmount } from "../utils/money";
-import { ReceiptIcon } from "./icons";
+import { TransactionGlyph } from "./icons";
 
 export function TransactionRow({
   transaction,
@@ -19,7 +19,7 @@ export function TransactionRow({
       className="flex w-full items-start gap-5 border-b border-[#ededed] px-4 py-3.5 text-left active:bg-[#fafafa]"
     >
       <span className="mt-0.5 shrink-0">
-        <ReceiptIcon />
+        <TransactionGlyph category={transaction.category} />
       </span>
       <span className="min-w-0 flex-1">
         <span className="block truncate text-[14px] leading-[18px] font-medium text-ink">{transaction.description}</span>

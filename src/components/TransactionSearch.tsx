@@ -11,7 +11,6 @@ export function TransactionSearch({
 }) {
   return (
     <div className="flex h-11 items-center gap-2 bg-[#f2f2f4] px-4" role="search">
-      <SearchIcon />
       <label className="sr-only" htmlFor="transaction-search">
         Search transactions
       </label>
@@ -27,6 +26,7 @@ export function TransactionSearch({
           Clear
         </button>
       )}
+      <SearchIcon />
     </div>
   );
 }
