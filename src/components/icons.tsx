@@ -65,15 +65,8 @@ export function FromPersonIcon() {
   );
 }
 
-export function TransactionGlyph({
-  description,
-  secondary,
-}: {
-  description: string;
-  secondary?: string;
-}) {
-  const fromPerson = description.startsWith("From:") || (secondary?.startsWith("From:") ?? false);
-  return fromPerson ? <FromPersonIcon /> : <StatementIcon />;
+export function TransactionGlyph({ description }: { description: string }) {
+  return description.startsWith("From:") ? <FromPersonIcon /> : <StatementIcon />;
 }
 
 export function MiniCardIcon() {

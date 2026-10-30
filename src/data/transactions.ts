@@ -31,8 +31,8 @@ export const transactions: Transaction[] = [
   },
   {
     id: "tx-03",
-    description: "MPAY*PINE TRAM",
-    secondary: "From: CASEY MORAN",
+    description: "From: CASEY MORAN",
+    secondary: "Pine Tram",
     merchant: "Pine Tram",
     location: "Melbourne",
     category: "incoming_transfer",
@@ -146,8 +146,8 @@ export const transactions: Transaction[] = [
   },
   {
     id: "tx-13",
-    description: "MPAY*BRIGHT BOOKS",
-    secondary: "From: CASEY MORAN",
+    description: "From: CASEY MORAN",
+    secondary: "Bright Books",
     merchant: "Bright Books",
     category: "incoming_transfer",
     status: "completed",
