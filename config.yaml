@@ -1,0 +1,40 @@
+# TextSwap runtime configuration.
+# Model choices, device, chunking, and quality presets live in this one file.
+
+device: auto # auto | cpu | cuda
+quality: balanced # fast | balanced | best
+chunk_frames: 48
+max_edge: 3840
+
+jobs:
+  # thread: in-process worker with cancel/resume (no Redis required).
+  # rq: reserved for a later Redis worker; not wired in phase 1.
+  backend: thread
+
+storage_dir: data/projects
+languages: ["en"]
+
+models:
+  # auto uses EasyOCR when that package is installed, otherwise OpenCV + Tesseract.
+  detector: auto # auto | opencv | easyocr | paddleocr
+  tracker: none # phase 3: raft | cotracker | sam2
+  inpainter: none # phase 4: propainter | e2fgvi | lama
+  renderer: classic # phase 5; compositing pipeline
+  ai_editor: none # optional later: anytext | textdiffuser
+
+presets:
+  fast:
+    sample_stride: 8
+    detect_max_width: 960
+    proxy_max_width: 960
+    proxy_crf: 28
+  balanced:
+    sample_stride: 4
+    detect_max_width: 1280
+    proxy_max_width: 1280
+    proxy_crf: 22
+  best:
+    sample_stride: 1
+    detect_max_width: 1920
+    proxy_max_width: 1600
+    proxy_crf: 18
