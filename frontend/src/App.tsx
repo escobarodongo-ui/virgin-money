@@ -15,9 +15,9 @@ import { Timeline } from "./components/Timeline";
 import { downloadCleanVideo } from "./exportVideo";
 import { localBundle, readLocalVideo } from "./localPreview";
 import { captureFrame, readFrame, sampleInk } from "./ocr";
-import { appearance, DEFAULT_FONT, DEFAULT_WEIGHT, newSpotId, normText, showsReplacement, type Lock, type Spot } from "./spots";
+import { DEFAULT_FONT, DEFAULT_WEIGHT, newSpotId, normText, showsReplacement, type Lock, type Spot } from "./spots";
+import { boxToQuad, finishTrack, poseAt, readGray, trackQuads, type Quad, type TextTrack } from "./textTrack";
 import { glyphAngle, matchLook } from "./style";
-import { trackEdits } from "./trackEdits";
 import type { Job, Project, Region } from "./types";
 
 const ACCEPT = ".mp4,.mov,.webm,.mkv,video/mp4,video/quicktime,video/webm,video/x-matroska";
@@ -38,6 +38,7 @@ export default function App() {
   const ocrCache = useRef(new Map<number, Spot[]>());
   const [spots, setSpots] = useState<Spot[]>([]);
   const [locks, setLocks] = useState<Lock[]>([]);
+  const [tracks, setTracks] = useState<TextTrack[]>([]);
   const [spotId, setSpotId] = useState<string | null>(null);
   const [paused, setPaused] = useState(false);
   const [reading, setReading] = useState(false);
@@ -46,9 +47,16 @@ export default function App() {
   const [downloadProgress, setDownloadProgress] = useState<number | null>(null);
   const spotsRef = useRef<Spot[]>([]);
   const locksRef = useRef<Lock[]>([]);
+  const tracksRef = useRef<TextTrack[]>([]);
   const matched = useRef(new Set<string>());
   spotsRef.current = spots;
   locksRef.current = locks;
+  tracksRef.current = tracks;
+
+  useEffect(() => {
+    if (!project?.id || tracks.length === 0) return;
+    window.localStorage.setItem(`textswap-tracks:${project.id}`, JSON.stringify(tracks));
+  }, [tracks, project?.id]);
 
   const applyBundle = useCallback((nextProject: Project, nextJob: Job) => {
     setProject(nextProject);
@@ -187,6 +195,14 @@ export default function App() {
     ocrCache.current.clear();
     setSpots([]);
     setLocks([]);
+    let restored: TextTrack[] = [];
+    try {
+      const saved = window.localStorage.getItem(`textswap-tracks:${project?.id ?? ""}`);
+      restored = saved ? (JSON.parse(saved) as TextTrack[]) : [];
+    } catch {
+      restored = [];
+    }
+    setTracks(restored);
     setSpotId(null);
     setPaused(false);
     matched.current.clear();
@@ -328,6 +344,44 @@ export default function App() {
         },
       ];
     });
+    setTracks((current) => {
+      const existing = current.find((track) => track.id === id);
+      if (existing) return current.map((track) => (track.id === id ? { ...track, replacement_text: value } : track));
+      if (!source || !box || !value.trim() || value.trim() === source.original.trim()) return current;
+      const quad = boxToQuad(box);
+      return [
+        ...current,
+        {
+          id,
+          start_frame: frame,
+          end_frame: frame,
+          original_text: source.original,
+          replacement_text: value,
+          style: {
+            fontFamily: source.fontFamily || DEFAULT_FONT,
+            fontWeight: source.fontWeight || DEFAULT_WEIGHT,
+            color: source.color,
+            background: source.background,
+          },
+          reference_quad: quad,
+          frames: [
+            {
+              frame_index: frame,
+              quad,
+              homography: [
+                [1, 0, 0],
+                [0, 1, 0],
+                [0, 0, 1],
+              ],
+              visible: true,
+              occluded: false,
+              confidence: 1,
+              mask: null,
+            },
+          ],
+        },
+      ];
+    });
     if (!source?.original.trim() || !box || matched.current.has(id) || !project?.width || !project.height) return;
     const video = videoRef.current;
     const context = video ? captureFrame(video) : null;
@@ -346,49 +400,70 @@ export default function App() {
     void matchLook(context, measured, source.original).then((look) => {
       setLocks((current) => current.map((lock) => (lock.id === id ? { ...lock, ...look, angle } : lock)));
       setSpots((current) => current.map((item) => (item.id === id ? { ...item, ...look, angle } : item)));
+      setTracks((current) =>
+        current.map((track) =>
+          track.id === id
+            ? { ...track, style: { ...track.style, fontFamily: look.fontFamily, fontWeight: look.fontWeight } }
+            : track,
+        ),
+      );
     });
   }
 
-  const scanKey = locks
-    .filter((lock) => !lock.manual && lock.original.trim() && !lock.scanned)
-    .map((lock) => lock.id)
+    const trackKey = tracks
+    .filter((track) => track.original_text.trim() && track.frames.length < (project?.frame_count ?? 0))
+    .map((track) => track.id)
     .join(",");
 
   useEffect(() => {
-    if (!scanKey || !project?.width || !project.height) return;
+    if (!trackKey || !project?.width || !project.height || !project.fps || !project.frame_count) return;
     const src = videoRef.current?.currentSrc;
     if (!src) return;
-    const ids = new Set(scanKey.split(","));
+    const pending = tracksRef.current.filter((track) => trackKey.split(",").includes(track.id));
     const signal = { stopped: false };
     setLocking(0);
-    void trackEdits({
-      src,
-      width: project.width,
-      height: project.height,
-      locks: locksRef.current.filter((lock) => ids.has(lock.id)),
-      signal,
-      onProgress: setLocking,
-    })
-      .then((found) => {
-        if (signal.stopped) return;
-        setLocks((current) =>
-          current.map((lock) => {
-            const samples = found.get(lock.id);
-            if (!samples || lock.scanned) return lock;
-            return { ...lock, samples, scanned: true };
-          }),
-        );
-        setLocking(null);
-      })
-      .catch((err: unknown) => {
-        if (signal.stopped) return;
-        setLocking(null);
-        setError(err instanceof Error ? err.message : "Could not keep the change through the clip.");
+    void (async () => {
+      const video = document.createElement("video");
+      video.muted = true;
+      video.playsInline = true;
+      video.preload = "auto";
+      video.src = src;
+      await new Promise<void>((resolve, reject) => {
+        video.onloadeddata = () => resolve();
+        video.onerror = () => reject(new Error("Could not follow the text."));
       });
+      const grays: Array<Awaited<ReturnType<typeof readGray>>> = [];
+      for (let index = 0; index < project.frame_count!; index += 1) {
+        if (signal.stopped) return;
+        const target = Math.min(Math.max(0, video.duration - 0.001), (index + 0.5) / project.fps!);
+        if (Math.abs(video.currentTime - target) > 0.0005) {
+          video.currentTime = target;
+          await new Promise<void>((resolve) => video.addEventListener("seeked", () => resolve(), { once: true }));
+        }
+        grays.push(await readGray(video, project.width!, project.height!));
+        setLocking((index + 1) / project.frame_count!);
+      }
+      if (signal.stopped) return;
+      setTracks((current) =>
+        current.map((track) => {
+          if (!pending.some((item) => item.id === track.id)) return track;
+          const seed = track.frames.find((pose) => pose.visible)?.quad ?? track.reference_quad;
+          const seedIndex = track.frames.find((pose) => pose.visible)?.frame_index ?? track.start_frame;
+          return finishTrack(track, trackQuads(grays, seed, seedIndex));
+        }),
+      );
+      setLocking(null);
+      video.removeAttribute("src");
+      video.load();
+    })().catch((err: unknown) => {
+      if (signal.stopped) return;
+      setLocking(null);
+      setError(err instanceof Error ? err.message : "Could not lock the text to the footage.");
+    });
     return () => {
       signal.stopped = true;
     };
-  }, [scanKey, project?.id, project?.width, project?.height]);
+  }, [trackKey, project?.id, project?.width, project?.height, project?.fps, project?.frame_count]);
 
   async function onDownload() {
     const video = videoRef.current;
@@ -403,7 +478,8 @@ export default function App() {
         width: project.width,
         height: project.height,
         filename: project.filename,
-        locks: locksRef.current,
+        tracks: tracksRef.current,
+        fps,
         onProgress: setDownloadProgress,
       });
     } catch (err) {
@@ -418,25 +494,13 @@ export default function App() {
   const frameCount = project?.frame_count ?? 0;
   const fps = project?.fps || 1;
   const covered = new Set<string>();
-  const painted: Spot[] = locks.flatMap((lock) => {
-    const placed = appearance(lock, frame / fps);
-    if (!placed) return [];
-    covered.add(lock.id);
-    if (lock.original) covered.add(normText(lock.original));
-    return [
-      {
-        id: lock.id,
-        frame,
-        box: placed.box,
-        original: lock.original,
-        replacement: lock.replacement,
-        color: placed.color,
-        background: placed.background,
-        fontFamily: lock.fontFamily,
-        fontWeight: lock.fontWeight,
-        angle: placed.angle,
-      },
-    ];
+  const tracked = tracks.flatMap((track) => {
+    const pose = poseAt(track, frame);
+    const next = track.replacement_text.trim();
+    if (!pose || !next || next === track.original_text.trim()) return [];
+    covered.add(track.id);
+    if (track.original_text) covered.add(normText(track.original_text));
+    return [{ id: track.id, quad: pose.quad as Quad, text: next, style: track.style, confidence: pose.confidence }];
   });
   const frameSpots = [
     ...spots.filter(
@@ -445,7 +509,6 @@ export default function App() {
         !covered.has(spot.id) &&
         !(spot.original && covered.has(normText(spot.original))),
     ),
-    ...painted,
   ];
   const canDownload = locks.some((lock) => showsReplacement(lock));
 
@@ -564,6 +627,7 @@ export default function App() {
               project={project}
               regions={regions}
               spots={frameSpots}
+              tracked={tracked}
               frame={frame}
               selectedId={spotId}
               onSelect={setSpotId}
@@ -592,7 +656,7 @@ export default function App() {
         paused={paused}
         frame={frame}
         reading={reading}
-        spots={frameSpots}
+        spots={spots.filter((spot) => spot.frame === frame)}
         selectedId={spotId}
         canDownload={canDownload}
         downloading={downloading}

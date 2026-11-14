@@ -1,5 +1,4 @@
-import { appearance, type Lock } from "./spots";
-import { paintReplacement } from "./style";
+import { paintQuad, poseAt, type TextTrack } from "./textTrack";
 
 const MIME_TYPES = [
   "video/mp4;codecs=avc1.42E01F,mp4a.40.2",
@@ -14,7 +13,8 @@ export async function downloadCleanVideo(options: {
   width: number;
   height: number;
   filename: string;
-  locks: Lock[];
+  tracks: TextTrack[];
+  fps: number;
   onProgress: (fraction: number) => void;
 }) {
   const mime = MIME_TYPES.find((type) => MediaRecorder.isTypeSupported(type));
@@ -78,16 +78,12 @@ export async function downloadCleanVideo(options: {
       const draw = () => {
         context.drawImage(video, 0, 0, canvas.width, canvas.height);
         const time = video.currentTime;
-        for (const lock of options.locks) {
-          const placed = appearance(lock, time);
-          if (!placed) continue;
-          paintReplacement(context, placed.box, lock.replacement.trim(), {
-            fontFamily: lock.fontFamily,
-            fontWeight: lock.fontWeight,
-            color: placed.color,
-            background: placed.background,
-            angle: placed.angle,
-          });
+        const frame = Math.round(time * options.fps);
+        for (const track of options.tracks) {
+          const pose = poseAt(track, frame);
+          const text = track.replacement_text.trim();
+          if (!pose || !text || text === track.original_text.trim()) continue;
+          paintQuad(context, pose.quad, text, track.style);
         }
         videoTrack.requestFrame();
         const duration = video.duration || 0;
