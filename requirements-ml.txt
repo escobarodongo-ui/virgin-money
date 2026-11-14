@@ -1,0 +1,8 @@
+# Optional detectors. The default OpenCV + Tesseract path does not need these.
+# Install a CUDA torch build first if you want GPU EasyOCR, then:
+#   pip install -r requirements-ml.txt
+easyocr==1.7.2
+# PaddleOCR is imported only when models.detector is paddleocr.
+# Pin the Paddle wheel that matches your CUDA/CPU setup before installing paddleocr.
+# paddlepaddle==2.6.2
+# paddleocr==2.9.1

@@ -1,0 +1,11 @@
+services:
+  textswap:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+      - ./config.yaml:/app/config.yaml:ro
+    # Uncomment to pass a GPU into the container. The image itself is CPU
+    # unless you rebuild with a CUDA torch wheel (see the Dockerfile).
+    # gpus: all
