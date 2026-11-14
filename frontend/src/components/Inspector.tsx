@@ -45,7 +45,11 @@ export function Inspector({ regions, warnings, selectedId, fps, onSelect }: Prop
         </div>
       )}
       <div className="min-h-0 flex-1 overflow-auto px-2 py-2">
-        {regions.length === 0 && <p className="px-2 py-3 text-sm text-muted">No regions yet.</p>}
+        {regions.length === 0 && (
+          <p className="px-2 py-3 text-sm text-muted">
+            No text boxes yet. The clip is in the player, so you can play it and scrub the timeline.
+          </p>
+        )}
         {regions.map((region) => {
           const active = region.id === selectedId;
           return (
