@@ -12,9 +12,12 @@ import { FrameEditor } from "./components/FrameEditor";
 import { Player } from "./components/Player";
 import { Stages } from "./components/Stages";
 import { Timeline } from "./components/Timeline";
+import { downloadCleanVideo } from "./exportVideo";
 import { localBundle, readLocalVideo } from "./localPreview";
 import { captureFrame, readFrame, sampleInk } from "./ocr";
-import { newSpotId, type Spot } from "./spots";
+import { appearance, DEFAULT_FONT, DEFAULT_WEIGHT, newSpotId, normText, showsReplacement, type Lock, type Spot } from "./spots";
+import { glyphAngle, matchLook } from "./style";
+import { trackEdits } from "./trackEdits";
 import type { Job, Project, Region } from "./types";
 
 const ACCEPT = ".mp4,.mov,.webm,.mkv,video/mp4,video/quicktime,video/webm,video/x-matroska";
@@ -34,9 +37,18 @@ export default function App() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const ocrCache = useRef(new Map<number, Spot[]>());
   const [spots, setSpots] = useState<Spot[]>([]);
+  const [locks, setLocks] = useState<Lock[]>([]);
   const [spotId, setSpotId] = useState<string | null>(null);
   const [paused, setPaused] = useState(false);
   const [reading, setReading] = useState(false);
+  const [locking, setLocking] = useState<number | null>(null);
+  const [downloading, setDownloading] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState<number | null>(null);
+  const spotsRef = useRef<Spot[]>([]);
+  const locksRef = useRef<Lock[]>([]);
+  const matched = useRef(new Set<string>());
+  spotsRef.current = spots;
+  locksRef.current = locks;
 
   const applyBundle = useCallback((nextProject: Project, nextJob: Job) => {
     setProject(nextProject);
@@ -174,8 +186,10 @@ export default function App() {
   useEffect(() => {
     ocrCache.current.clear();
     setSpots([]);
+    setLocks([]);
     setSpotId(null);
     setPaused(false);
+    matched.current.clear();
   }, [project?.id]);
 
   useEffect(() => {
@@ -204,10 +218,14 @@ export default function App() {
           replacement: item.original,
         }));
         ocrCache.current.set(frameNow, created);
-        setSpots((current) => [
-          ...current.filter((spot) => spot.frame !== frameNow || spot.original === ""),
-          ...created,
-        ]);
+        setSpots((current) => {
+          const kept = current.filter(
+            (spot) => spot.frame === frameNow && (spot.original === "" || showsReplacement(spot)),
+          );
+          const keptText = new Set(kept.map((spot) => normText(spot.original)).filter(Boolean));
+          const fresh = created.filter((spot) => !spot.original || !keptText.has(normText(spot.original)));
+          return [...current.filter((spot) => spot.frame !== frameNow), ...kept, ...fresh];
+        });
         setSpotId((current) => current ?? created[0]?.id ?? null);
       } catch (err) {
         if (!stop) setError(err instanceof Error ? err.message : "Could not read the text on this frame.");
@@ -254,6 +272,9 @@ export default function App() {
       box,
       original: "",
       replacement: "",
+      fontFamily: DEFAULT_FONT,
+      fontWeight: DEFAULT_WEIGHT,
+      angle: 0,
       ...ink,
     };
     setSpots((current) => [...current, spot]);
@@ -279,16 +300,161 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [project?.frame_count]);
 
+  function onReplace(id: string, value: string) {
+    setSpots((current) => current.map((spot) => (spot.id === id ? { ...spot, replacement: value } : spot)));
+    const spot = spotsRef.current.find((item) => item.id === id);
+    const locked = locksRef.current.find((lock) => lock.id === id);
+    const source = spot ?? locked;
+    const box = spot?.box ?? locked?.anchor;
+    setLocks((current) => {
+      const existing = current.find((lock) => lock.id === id);
+      if (existing) return current.map((lock) => (lock.id === id ? { ...lock, replacement: value } : lock));
+      if (!source || !box || !value.trim() || value.trim() === source.original.trim()) return current;
+      return [
+        ...current,
+        {
+          id,
+          original: source.original,
+          replacement: value,
+          fontFamily: source.fontFamily || DEFAULT_FONT,
+          fontWeight: source.fontWeight || DEFAULT_WEIGHT,
+          angle: "angle" in source ? source.angle : 0,
+          color: source.color,
+          background: source.background,
+          anchor: box,
+          manual: !source.original.trim(),
+          samples: [],
+          scanned: !source.original.trim(),
+        },
+      ];
+    });
+    if (!source?.original.trim() || !box || matched.current.has(id) || !project?.width || !project.height) return;
+    const video = videoRef.current;
+    const context = video ? captureFrame(video) : null;
+    if (!context) return;
+    matched.current.add(id);
+    const scaleX = context.canvas.width / project.width;
+    const scaleY = context.canvas.height / project.height;
+    const measured = {
+      x: box.x * scaleX,
+      y: box.y * scaleY,
+      w: box.w * scaleX,
+      h: box.h * scaleY,
+    };
+    const angle = glyphAngle(context, measured);
+    setLocks((current) => current.map((lock) => (lock.id === id ? { ...lock, angle } : lock)));
+    void matchLook(context, measured, source.original).then((look) => {
+      setLocks((current) => current.map((lock) => (lock.id === id ? { ...lock, ...look, angle } : lock)));
+      setSpots((current) => current.map((item) => (item.id === id ? { ...item, ...look, angle } : item)));
+    });
+  }
+
+  const scanKey = locks
+    .filter((lock) => !lock.manual && lock.original.trim() && !lock.scanned)
+    .map((lock) => lock.id)
+    .join(",");
+
+  useEffect(() => {
+    if (!scanKey || !project?.width || !project.height) return;
+    const src = videoRef.current?.currentSrc;
+    if (!src) return;
+    const ids = new Set(scanKey.split(","));
+    const signal = { stopped: false };
+    setLocking(0);
+    void trackEdits({
+      src,
+      width: project.width,
+      height: project.height,
+      locks: locksRef.current.filter((lock) => ids.has(lock.id)),
+      signal,
+      onProgress: setLocking,
+    })
+      .then((found) => {
+        if (signal.stopped) return;
+        setLocks((current) =>
+          current.map((lock) => {
+            const samples = found.get(lock.id);
+            if (!samples || lock.scanned) return lock;
+            return { ...lock, samples, scanned: true };
+          }),
+        );
+        setLocking(null);
+      })
+      .catch((err: unknown) => {
+        if (signal.stopped) return;
+        setLocking(null);
+        setError(err instanceof Error ? err.message : "Could not keep the change through the clip.");
+      });
+    return () => {
+      signal.stopped = true;
+    };
+  }, [scanKey, project?.id, project?.width, project?.height]);
+
+  async function onDownload() {
+    const video = videoRef.current;
+    if (!video?.currentSrc || !project?.width || !project.height) return;
+    if (!video.paused) video.pause();
+    setDownloading(true);
+    setDownloadProgress(0);
+    setError(null);
+    try {
+      await downloadCleanVideo({
+        src: video.currentSrc,
+        width: project.width,
+        height: project.height,
+        filename: project.filename,
+        locks: locksRef.current,
+        onProgress: setDownloadProgress,
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not download the video.");
+    } finally {
+      setDownloading(false);
+      setDownloadProgress(null);
+    }
+  }
+
   const busy = job?.status === "queued" || job?.status === "running" || uploadProgress != null;
   const frameCount = project?.frame_count ?? 0;
   const fps = project?.fps || 1;
+  const covered = new Set<string>();
+  const painted: Spot[] = locks.flatMap((lock) => {
+    const placed = appearance(lock, frame / fps);
+    if (!placed) return [];
+    covered.add(lock.id);
+    if (lock.original) covered.add(normText(lock.original));
+    return [
+      {
+        id: lock.id,
+        frame,
+        box: placed.box,
+        original: lock.original,
+        replacement: lock.replacement,
+        color: placed.color,
+        background: placed.background,
+        fontFamily: lock.fontFamily,
+        fontWeight: lock.fontWeight,
+        angle: placed.angle,
+      },
+    ];
+  });
+  const frameSpots = [
+    ...spots.filter(
+      (spot) =>
+        spot.frame === frame &&
+        !covered.has(spot.id) &&
+        !(spot.original && covered.has(normText(spot.original))),
+    ),
+    ...painted,
+  ];
+  const canDownload = locks.some((lock) => showsReplacement(lock));
 
   return (
     <div className="shell">
       <header className="col-span-full flex items-center justify-between border-b border-line px-5 py-3">
         <div className="flex items-baseline gap-3">
           <h1 className="font-serif text-3xl italic leading-none text-paper">TextSwap</h1>
-          <p className="text-[11px] uppercase tracking-[0.2em] text-muted">Pause a frame, then change the words</p>
+          <p className="text-[11px] uppercase tracking-[0.2em] text-muted">Edits stay in the video</p>
         </div>
         <p className="hidden text-xs text-muted sm:block">Text editor</p>
       </header>
@@ -397,7 +563,7 @@ export default function App() {
             <Player
               project={project}
               regions={regions}
-              spots={spots.filter((spot) => spot.frame === frame)}
+              spots={frameSpots}
               frame={frame}
               selectedId={spotId}
               onSelect={setSpotId}
@@ -426,14 +592,17 @@ export default function App() {
         paused={paused}
         frame={frame}
         reading={reading}
-        spots={spots.filter((spot) => spot.frame === frame)}
+        spots={frameSpots}
         selectedId={spotId}
+        canDownload={canDownload}
+        downloading={downloading}
+        downloadProgress={downloadProgress}
+        locking={locking}
         onPause={togglePlayback}
         onPlay={togglePlayback}
         onSelect={setSpotId}
-        onChange={(id, value) => {
-          setSpots((current) => current.map((spot) => (spot.id === id ? { ...spot, replacement: value } : spot)));
-        }}
+        onChange={onReplace}
+        onDownload={() => void onDownload()}
       />
     </div>
   );

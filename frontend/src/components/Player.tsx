@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { quadAt } from "../geometry";
 import { showsReplacement, type Spot } from "../spots";
+import { paintReplacement } from "../style";
 import type { Project, Region } from "../types";
 
 type Props = {
@@ -181,22 +182,7 @@ export function Player({
                 );
               })}
             </svg>
-            {spots.filter(showsReplacement).map((spot) => (
-              <div
-                key={`${spot.id}-cover`}
-                className="edit-cover pointer-events-none absolute"
-                style={{
-                  left: `${(spot.box.x / sourceWidth) * 100}%`,
-                  top: `${(spot.box.y / sourceHeight) * 100}%`,
-                  width: `${(spot.box.w / sourceWidth) * 100}%`,
-                  height: `${(spot.box.h / sourceHeight) * 100}%`,
-                  background: spot.background,
-                  color: spot.color,
-                }}
-              >
-                <span>{spot.replacement}</span>
-              </div>
-            ))}
+            <CoverCanvas spots={spots} width={sourceWidth} height={sourceHeight} />
           </div>
         )}
       </div>
@@ -210,4 +196,19 @@ export function Player({
       </div>
     </div>
   );
+}
+
+function CoverCanvas({ spots, width, height }: { spots: Spot[]; width: number; height: number }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const canvas = ref.current;
+    const context = canvas?.getContext("2d");
+    if (!canvas || !context) return;
+    context.clearRect(0, 0, width, height);
+    for (const spot of spots) {
+      if (!showsReplacement(spot)) continue;
+      paintReplacement(context, spot.box, spot.replacement.trim(), spot);
+    }
+  }, [spots, width, height]);
+  return <canvas ref={ref} width={width} height={height} className="pointer-events-none absolute inset-0 h-full w-full" />;
 }
