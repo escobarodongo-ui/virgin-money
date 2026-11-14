@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Spot } from "../spots";
 
 type Props = {
@@ -38,10 +38,17 @@ export function FrameEditor({
 }: Props) {
   const selected = spots.find((spot) => spot.id === selectedId) ?? null;
   const inputRef = useRef<HTMLInputElement>(null);
+  const [draft, setDraft] = useState("");
 
   useEffect(() => {
+    setDraft(selected?.replacement ?? "");
     if (selected && paused) inputRef.current?.focus();
-  }, [selected?.id, paused]);
+  }, [selected?.id, selected?.replacement, paused]);
+
+  function applyDraft() {
+    if (!selected || !draft.trim() || draft === selected.replacement) return;
+    onChange(selected.id, draft);
+  }
 
   return (
     <aside className="editor-panel flex h-full min-h-[280px] flex-col border-t border-line bg-panel lg:border-t-0 lg:border-l">
@@ -49,7 +56,7 @@ export function FrameEditor({
         <p className="text-[11px] uppercase tracking-[0.18em] text-lime">Text editor</p>
         <h2 className="mt-1 font-serif text-4xl italic leading-none text-paper">Edit this frame</h2>
         <p className="mt-3 text-sm leading-relaxed text-muted">
-          Pause, click a word or number, and type. The new text keeps the original color, size, and font, and stays in the clip.
+          Pause, click a word or number, type the new text, then press Change. It keeps the original color, size, and font, and stays on that screen.
         </p>
         {hasVideo && (
           <button
@@ -92,13 +99,27 @@ export function FrameEditor({
               </span>
               <input
                 ref={inputRef}
-                value={selected.replacement}
-                onChange={(event) => onChange(selected.id, event.target.value)}
+                value={draft}
+                onChange={(event) => setDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    applyDraft();
+                  }
+                }}
                 placeholder={selected.original || "Type here"}
                 className="mt-2 w-full border border-line bg-ink px-3 py-3 text-2xl text-paper outline-none focus:border-lime"
                 autoComplete="off"
                 spellCheck={false}
               />
+              <button
+                type="button"
+                disabled={!draft.trim() || draft === selected.replacement}
+                onClick={applyDraft}
+                className="mt-3 w-full bg-lime px-3 py-3 text-sm font-medium text-ink disabled:opacity-40"
+              >
+                Change
+              </button>
             </label>
           )}
         </div>
