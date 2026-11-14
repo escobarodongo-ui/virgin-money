@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { quadAt } from "../geometry";
-import { showsReplacement, type Spot } from "../spots";
-import { paintReplacement } from "../style";
+import type { Spot } from "../spots";
+import { paintQuad, type Quad, type TextTrack } from "../textTrack";
 import type { Project, Region } from "../types";
 
 type Props = {
   project: Project;
   regions: Region[];
   spots: Spot[];
+  tracked: Array<{ id: string; quad: Quad; text: string; style: TextTrack["style"]; confidence: number }>;
   frame: number;
   selectedId: string | null;
   onSelect: (id: string) => void;
@@ -21,6 +22,7 @@ export function Player({
   project,
   regions,
   spots,
+  tracked,
   frame,
   selectedId,
   onSelect,
@@ -182,7 +184,23 @@ export function Player({
                 );
               })}
             </svg>
-            <CoverCanvas spots={spots} width={sourceWidth} height={sourceHeight} />
+            <CoverCanvas tracked={tracked} width={sourceWidth} height={sourceHeight} />
+            <svg
+              className="pointer-events-none absolute inset-0 h-full w-full overflow-visible"
+              viewBox={`0 0 ${sourceWidth} ${sourceHeight}`}
+              preserveAspectRatio="none"
+            >
+              {tracked.map((item) => (
+                <polygon
+                  key={`${item.id}-quad`}
+                  points={item.quad.map((point) => point.join(",")).join(" ")}
+                  vectorEffect="non-scaling-stroke"
+                  fill="transparent"
+                  stroke="#d6f25c"
+                  strokeWidth={1.5}
+                />
+              ))}
+            </svg>
           </div>
         )}
       </div>
@@ -198,17 +216,22 @@ export function Player({
   );
 }
 
-function CoverCanvas({ spots, width, height }: { spots: Spot[]; width: number; height: number }) {
+function CoverCanvas({
+  tracked,
+  width,
+  height,
+}: {
+  tracked: Array<{ quad: Quad; text: string; style: TextTrack["style"] }>;
+  width: number;
+  height: number;
+}) {
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const canvas = ref.current;
     const context = canvas?.getContext("2d");
     if (!canvas || !context) return;
     context.clearRect(0, 0, width, height);
-    for (const spot of spots) {
-      if (!showsReplacement(spot)) continue;
-      paintReplacement(context, spot.box, spot.replacement.trim(), spot);
-    }
-  }, [spots, width, height]);
+    for (const item of tracked) paintQuad(context, item.quad, item.text, item.style);
+  }, [tracked, width, height]);
   return <canvas ref={ref} width={width} height={height} className="pointer-events-none absolute inset-0 h-full w-full" />;
 }
