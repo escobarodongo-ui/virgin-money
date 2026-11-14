@@ -8,12 +8,14 @@ import {
   resumeProject,
   uploadVideo,
 } from "./api";
-import { Inspector } from "./components/Inspector";
+import { FrameEditor } from "./components/FrameEditor";
 import { Player } from "./components/Player";
 import { Stages } from "./components/Stages";
 import { Timeline } from "./components/Timeline";
 import { localBundle, readLocalVideo } from "./localPreview";
-import type { Job, Project, Region, Warning } from "./types";
+import { captureFrame, readFrame, sampleInk } from "./ocr";
+import { newSpotId, type Spot } from "./spots";
+import type { Job, Project, Region } from "./types";
 
 const ACCEPT = ".mp4,.mov,.webm,.mkv,video/mp4,video/quicktime,video/webm,video/x-matroska";
 
@@ -21,7 +23,6 @@ export default function App() {
   const [project, setProject] = useState<Project | null>(null);
   const [job, setJob] = useState<Job | null>(null);
   const [regions, setRegions] = useState<Region[]>([]);
-  const [warnings, setWarnings] = useState<Warning[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [frame, setFrame] = useState(0);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
@@ -30,12 +31,17 @@ export default function App() {
   const inputRef = useRef<HTMLInputElement>(null);
   const uploadSeq = useRef(0);
   const localUrl = useRef<string | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const ocrCache = useRef(new Map<number, Spot[]>());
+  const [spots, setSpots] = useState<Spot[]>([]);
+  const [spotId, setSpotId] = useState<string | null>(null);
+  const [paused, setPaused] = useState(false);
+  const [reading, setReading] = useState(false);
 
   const applyBundle = useCallback((nextProject: Project, nextJob: Job) => {
     setProject(nextProject);
     setJob(nextJob);
     setRegions([]);
-    setWarnings([]);
     setSelectedId(null);
     setFrame(0);
     setError(null);
@@ -77,7 +83,6 @@ export default function App() {
       .then((found) => {
         if (stop) return;
         setRegions(found.regions);
-        setWarnings(found.warnings);
         setSelectedId((current) => current ?? found.regions[0]?.id ?? null);
       })
       .catch((err: unknown) => {
@@ -130,7 +135,7 @@ export default function App() {
         current
           ? {
               ...current,
-              message: "Your video is in the editor. Text detection did not run, so there are no boxes yet.",
+              message: "Your video is in the editor. Pause a frame, then change the text or numbers.",
             }
           : current,
       );
@@ -162,10 +167,108 @@ export default function App() {
     setJob(next);
   }
 
+  const onVideo = useCallback((video: HTMLVideoElement | null) => {
+    videoRef.current = video;
+  }, []);
+
+  useEffect(() => {
+    ocrCache.current.clear();
+    setSpots([]);
+    setSpotId(null);
+    setPaused(false);
+  }, [project?.id]);
+
+  useEffect(() => {
+    if (!paused || !project?.width || !project.height) return;
+    const video = videoRef.current;
+    if (!video) return;
+    const frameNow = frame;
+    if (ocrCache.current.has(frameNow)) return;
+    let stop = false;
+    setReading(true);
+    const run = async () => {
+      if (video.readyState < 2) {
+        await new Promise<void>((resolve) => video.addEventListener("loadeddata", () => resolve(), { once: true }));
+      }
+      if (video.seeking) {
+        await new Promise<void>((resolve) => video.addEventListener("seeked", () => resolve(), { once: true }));
+      }
+      if (stop) return;
+      try {
+        const found = await readFrame(video, project.width ?? 1, project.height ?? 1);
+        if (stop) return;
+        const created: Spot[] = found.map((item) => ({
+          ...item,
+          id: newSpotId(),
+          frame: frameNow,
+          replacement: item.original,
+        }));
+        ocrCache.current.set(frameNow, created);
+        setSpots((current) => [
+          ...current.filter((spot) => spot.frame !== frameNow || spot.original === ""),
+          ...created,
+        ]);
+        setSpotId((current) => current ?? created[0]?.id ?? null);
+      } catch (err) {
+        if (!stop) setError(err instanceof Error ? err.message : "Could not read the text on this frame.");
+      } finally {
+        if (!stop) setReading(false);
+      }
+    };
+    void run();
+    return () => {
+      stop = true;
+    };
+  }, [paused, frame, project?.id, project?.width, project?.height]);
+
+  function togglePlayback() {
+    const video = videoRef.current;
+    if (!video) return;
+    if (video.paused) void video.play();
+    else video.pause();
+  }
+
+  function placeBox(x: number, y: number) {
+    if (!project?.width || !project.height) return;
+    const box = {
+      w: Math.max(72, project.width * 0.14),
+      h: Math.max(32, project.height * 0.07),
+      x: 0,
+      y: 0,
+    };
+    box.x = Math.min(Math.max(0, x - box.w / 2), project.width - box.w);
+    box.y = Math.min(Math.max(0, y - box.h / 2), project.height - box.h);
+    const video = videoRef.current;
+    const context = video ? captureFrame(video) : null;
+    const ink = context
+      ? sampleInk(context, {
+          x: (box.x / project.width) * context.canvas.width,
+          y: (box.y / project.height) * context.canvas.height,
+          w: (box.w / project.width) * context.canvas.width,
+          h: (box.h / project.height) * context.canvas.height,
+        })
+      : { color: "#14120e", background: "#f3ecdf" };
+    const spot: Spot = {
+      id: newSpotId(),
+      frame,
+      box,
+      original: "",
+      replacement: "",
+      ...ink,
+    };
+    setSpots((current) => [...current, spot]);
+    setSpotId(spot.id);
+  }
+
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return;
       if (!project?.frame_count) return;
+      if (event.key === " ") {
+        event.preventDefault();
+        togglePlayback();
+        return;
+      }
       if (event.key === "ArrowRight") {
         setFrame((current) => Math.min(project.frame_count! - 1, current + 1));
       } else if (event.key === "ArrowLeft") {
@@ -185,9 +288,9 @@ export default function App() {
       <header className="col-span-full flex items-center justify-between border-b border-line px-5 py-3">
         <div className="flex items-baseline gap-3">
           <h1 className="font-serif text-3xl italic leading-none text-paper">TextSwap</h1>
-          <p className="text-[11px] uppercase tracking-[0.2em] text-muted">Find the words in the picture</p>
+          <p className="text-[11px] uppercase tracking-[0.2em] text-muted">Pause a frame, then change the words</p>
         </div>
-        <p className="hidden text-xs text-muted sm:block">Phase 1 · ingest, detect, review</p>
+        <p className="hidden text-xs text-muted sm:block">Text editor</p>
       </header>
 
       <aside className="flex min-h-0 flex-col gap-5 border-r border-line bg-ink px-4 py-4">
@@ -294,10 +397,14 @@ export default function App() {
             <Player
               project={project}
               regions={regions}
+              spots={spots.filter((spot) => spot.frame === frame)}
               frame={frame}
-              selectedId={selectedId}
-              onSelect={setSelectedId}
+              selectedId={spotId}
+              onSelect={setSpotId}
               onFrame={setFrame}
+              onPick={placeBox}
+              onVideo={onVideo}
+              onPlayback={(playing) => setPaused(!playing)}
             />
             <Timeline
               frame={frame}
@@ -314,11 +421,20 @@ export default function App() {
         )}
       </main>
 
-      <Inspector regions={regions} warnings={warnings} selectedId={selectedId} fps={fps} onSelect={(id) => {
-        setSelectedId(id);
-        const region = regions.find((item) => item.id === id);
-        if (region) setFrame(region.start_frame);
-      }} />
+      <FrameEditor
+        hasVideo={Boolean((project?.local_url || project?.proxy_ready) && project.width)}
+        paused={paused}
+        frame={frame}
+        reading={reading}
+        spots={spots.filter((spot) => spot.frame === frame)}
+        selectedId={spotId}
+        onPause={togglePlayback}
+        onPlay={togglePlayback}
+        onSelect={setSpotId}
+        onChange={(id, value) => {
+          setSpots((current) => current.map((spot) => (spot.id === id ? { ...spot, replacement: value } : spot)));
+        }}
+      />
     </div>
   );
 }
