@@ -24,12 +24,15 @@ export function readLocalVideo(file: File): Promise<LocalMedia> {
         fail();
         return;
       }
-      resolve({
+      const media = {
         url,
         width: video.videoWidth,
         height: video.videoHeight,
         duration: video.duration,
-      });
+      };
+      video.removeAttribute("src");
+      video.load();
+      resolve(media);
     };
     video.onerror = fail;
   });

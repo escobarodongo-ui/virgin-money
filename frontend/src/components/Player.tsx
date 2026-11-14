@@ -35,6 +35,7 @@ export function Player({
   const videoRef = useRef<HTMLVideoElement>(null);
   const [box, setBox] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
   const [playing, setPlaying] = useState(false);
+  const [pictureNote, setPictureNote] = useState<string | null>(null);
   const fromVideo = useRef(false);
   const sourceWidth = project.width ?? 1;
   const sourceHeight = project.height ?? 1;
@@ -127,6 +128,11 @@ export function Player({
           }}
           onLoadedData={() => {
             if (videoRef.current?.paused) onPlayback(false);
+            const video = videoRef.current;
+            if (video) void showPicture(video, fps, onFrame, setPictureNote);
+          }}
+          onError={() => {
+            setPictureNote("This browser could not play that video. Save it as an MP4 (H.264) and open it again.");
           }}
           onClick={() => {
             if (!videoRef.current?.paused) videoRef.current?.pause();
@@ -184,7 +190,7 @@ export function Player({
                 );
               })}
             </svg>
-            <CoverCanvas tracked={tracked} width={sourceWidth} height={sourceHeight} />
+            {tracked.length > 0 && <CoverCanvas tracked={tracked} width={sourceWidth} height={sourceHeight} />}
             <svg
               className="pointer-events-none absolute inset-0 h-full w-full overflow-visible"
               viewBox={`0 0 ${sourceWidth} ${sourceHeight}`}
@@ -204,6 +210,9 @@ export function Player({
           </div>
         )}
       </div>
+      {pictureNote && (
+        <p className="absolute left-4 right-4 top-4 z-10 bg-ink/90 px-3 py-2 text-sm text-paper">{pictureNote}</p>
+      )}
       <div className="absolute bottom-3 left-3 z-10 flex items-center gap-2">
         <button type="button" onClick={pauseOrPlay} className="bg-lime px-3 py-2 text-sm text-ink">
           {playing ? "Pause to edit" : "Play"}
@@ -214,6 +223,43 @@ export function Player({
       </div>
     </div>
   );
+}
+
+function frameIsBlank(video: HTMLVideoElement) {
+  if (!video.videoWidth) return true;
+  const canvas = document.createElement("canvas");
+  canvas.width = 24;
+  canvas.height = 24;
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  if (!context) return false;
+  context.drawImage(video, 0, 0, 24, 24);
+  const data = context.getImageData(0, 0, 24, 24).data;
+  let sum = 0;
+  for (let index = 0; index < data.length; index += 4) sum += data[index] + data[index + 1] + data[index + 2];
+  return sum / (24 * 24) < 12;
+}
+
+async function showPicture(
+  video: HTMLVideoElement,
+  fps: number,
+  onFrame: (frame: number) => void,
+  setNote: (note: string | null) => void,
+) {
+  if (!frameIsBlank(video)) {
+    setNote(null);
+    return;
+  }
+  const duration = Number.isFinite(video.duration) ? video.duration : 0;
+  for (let time = 0.2; time < Math.min(Math.max(duration - 0.05, 0), 3); time += 0.25) {
+    video.currentTime = time;
+    await new Promise<void>((resolve) => video.addEventListener("seeked", () => resolve(), { once: true }));
+    if (!frameIsBlank(video)) {
+      onFrame(Math.round(time * fps));
+      setNote(null);
+      return;
+    }
+  }
+  setNote("The opening is black. Scrub the timeline until the picture appears, or use an MP4 (H.264) file.");
 }
 
 function CoverCanvas({

@@ -16,7 +16,19 @@ import { downloadCleanVideo } from "./exportVideo";
 import { localBundle, readLocalVideo } from "./localPreview";
 import { captureFrame, readFrame, sampleInk } from "./ocr";
 import { DEFAULT_FONT, DEFAULT_WEIGHT, newSpotId, normText, showsReplacement, type Lock, type Spot } from "./spots";
-import { boxToQuad, finishTrack, poseAt, readGray, trackQuads, type Quad, type TextTrack } from "./textTrack";
+import {
+  boxToQuad,
+  finishTrack,
+  poseAt,
+  posesFromWalks,
+  readGray,
+  scaleQuad,
+  startWalk,
+  walkFrame,
+  type Quad,
+  type TextTrack,
+  type Walk,
+} from "./textTrack";
 import { glyphAngle, matchLook } from "./style";
 import type { Job, Project, Region } from "./types";
 
@@ -144,11 +156,7 @@ export default function App() {
         if (seq === uploadSeq.current) setUploadProgress(fraction);
       });
       if (seq !== uploadSeq.current) return;
-      if (created.project.proxy_ready) rememberLocalUrl(null);
-      applyBundle(
-        { ...created.project, local_url: created.project.proxy_ready ? undefined : media.url },
-        created.job,
-      );
+      applyBundle({ ...created.project, local_url: media.url, width: media.width, height: media.height }, created.job);
     } catch {
       if (seq !== uploadSeq.current) return;
       setJob((current) =>
@@ -432,24 +440,58 @@ export default function App() {
         video.onloadeddata = () => resolve();
         video.onerror = () => reject(new Error("Could not follow the text."));
       });
-      const grays: Array<Awaited<ReturnType<typeof readGray>>> = [];
-      for (let index = 0; index < project.frame_count!; index += 1) {
-        if (signal.stopped) return;
+      const walks = new Map<string, { forward: Walk; backward: Walk; scaleUp: number; seeded: boolean }>();
+      const frameCount = project.frame_count!;
+      const readAt = async (index: number) => {
         const target = Math.min(Math.max(0, video.duration - 0.001), (index + 0.5) / project.fps!);
         if (Math.abs(video.currentTime - target) > 0.0005) {
           video.currentTime = target;
           await new Promise<void>((resolve) => video.addEventListener("seeked", () => resolve(), { once: true }));
         }
-        grays.push(await readGray(video, project.width!, project.height!));
-        setLocking((index + 1) / project.frame_count!);
+        const gray = await readGray(video, project.width!, project.height!, 480);
+        await new Promise((resolve) => window.setTimeout(resolve, 0));
+        return gray;
+      };
+      for (const track of pending) {
+        const seedQuad = track.frames.find((pose) => pose.visible)?.quad ?? track.reference_quad;
+        const seedIndex = track.frames.find((pose) => pose.visible)?.frame_index ?? track.start_frame;
+        const sample = await readAt(Math.min(seedIndex, frameCount - 1));
+        const scale = sample.width / project.width!;
+        walks.set(track.id, {
+          forward: startWalk(scaleQuad(seedQuad, scale), seedIndex, 1),
+          backward: startWalk(scaleQuad(seedQuad, scale), seedIndex, -1),
+          scaleUp: project.width! / sample.width,
+          seeded: false,
+        });
+      }
+      for (let index = 0; index < frameCount; index += 1) {
+        if (signal.stopped) return;
+        const gray = await readAt(index);
+        for (const walk of walks.values()) {
+          if (index === walk.forward.seedIndex) {
+            walkFrame(walk.forward, gray, index);
+            walkFrame(walk.backward, gray, index);
+            walk.seeded = true;
+          } else if (walk.seeded && index > walk.forward.seedIndex) {
+            walkFrame(walk.forward, gray, index);
+          }
+        }
+        setLocking((index + 1) / frameCount / 2);
+      }
+      for (let index = frameCount - 1; index >= 0; index -= 1) {
+        if (signal.stopped) return;
+        const gray = await readAt(index);
+        for (const walk of walks.values()) {
+          if (index < walk.backward.seedIndex) walkFrame(walk.backward, gray, index);
+        }
+        setLocking(0.5 + (frameCount - index) / frameCount / 2);
       }
       if (signal.stopped) return;
       setTracks((current) =>
         current.map((track) => {
-          if (!pending.some((item) => item.id === track.id)) return track;
-          const seed = track.frames.find((pose) => pose.visible)?.quad ?? track.reference_quad;
-          const seedIndex = track.frames.find((pose) => pose.visible)?.frame_index ?? track.start_frame;
-          return finishTrack(track, trackQuads(grays, seed, seedIndex));
+          const walk = walks.get(track.id);
+          if (!walk) return track;
+          return finishTrack(track, posesFromWalks(walk.forward, walk.backward, frameCount, walk.scaleUp));
         }),
       );
       setLocking(null);
@@ -522,7 +564,7 @@ export default function App() {
         <p className="hidden text-xs text-muted sm:block">Text editor</p>
       </header>
 
-      <aside className="flex min-h-0 flex-col gap-5 border-r border-line bg-ink px-4 py-4">
+      <aside className="upload-panel flex min-h-0 flex-col gap-5 border-r border-line bg-ink px-4 py-4">
         <div
           onDragOver={(event) => {
             event.preventDefault();

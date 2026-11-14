@@ -63,20 +63,104 @@ export function trackQuads(frames: Gray[], seed: Quad, seedIndex: number): Frame
   return smooth(merged, sceneCuts(frames));
 }
 
-export async function readGray(video: HTMLVideoElement, width: number, height: number): Promise<Gray> {
+export async function readGray(video: HTMLVideoElement, width: number, height: number, maxEdge = 480): Promise<Gray> {
+  const scale = Math.min(1, maxEdge / Math.max(width, height));
+  const w = Math.max(1, Math.round(width * scale));
+  const h = Math.max(1, Math.round(height * scale));
   const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
+  canvas.width = w;
+  canvas.height = h;
   const context = canvas.getContext("2d", { willReadFrequently: true });
   if (!context) throw new Error("Could not read a frame.");
-  context.drawImage(video, 0, 0, width, height);
-  const pixels = context.getImageData(0, 0, width, height).data;
-  const data = new Float32Array(width * height);
+  context.drawImage(video, 0, 0, w, h);
+  const pixels = context.getImageData(0, 0, w, h).data;
+  const data = new Float32Array(w * h);
   for (let index = 0; index < data.length; index += 1) {
     const offset = index * 4;
     data[index] = 0.2126 * pixels[offset] + 0.7152 * pixels[offset + 1] + 0.0722 * pixels[offset + 2];
   }
-  return { data, width, height };
+  return { data, width: w, height: h };
+}
+
+export function scaleQuad(quad: Quad, scale: number): Quad {
+  return quad.map(([x, y]) => [x * scale, y * scale]) as Quad;
+}
+
+export type Walk = {
+  direction: 1 | -1;
+  index: number;
+  seedIndex: number;
+  seed: Quad;
+  points: Point[];
+  reference: Point[];
+  poses: Map<number, FramePose>;
+  prev: Gray | null;
+  prevSmall: Float32Array | null;
+  cuts: Set<number>;
+  done: boolean;
+};
+
+export function startWalk(seed: Quad, seedIndex: number, direction: 1 | -1): Walk {
+  return {
+    direction,
+    index: seedIndex,
+    seedIndex,
+    seed,
+    points: samplePoints(seed),
+    reference: samplePoints(seed),
+    poses: new Map(),
+    prev: null,
+    prevSmall: null,
+    cuts: new Set(),
+    done: false,
+  };
+}
+
+export function walkFrame(walk: Walk, gray: Gray, index: number) {
+  const small = downsample(gray);
+  if (walk.prevSmall) {
+    let total = 0;
+    for (let pixel = 0; pixel < small.length; pixel += 1) total += Math.abs(small[pixel] - walk.prevSmall[pixel]);
+    if (total / small.length >= 28) walk.cuts.add(index);
+  }
+  walk.prevSmall = small;
+  if (!walk.prev) {
+    walk.poses.set(index, makePose(index, walk.seed, identity(), 1, true, false));
+    walk.prev = gray;
+    walk.index = index;
+    return;
+  }
+  if (walk.done) return;
+  const tracked = flow(walk.prev, gray, walk.points);
+  const back = flow(gray, walk.prev, tracked);
+  const good = walk.points.map((point, pointIndex) => distance(point, back[pointIndex]) < 1.5);
+  const homography = fitHomography(walk.reference, tracked, good);
+  if (!homography) {
+    walk.poses.set(index, makePose(index, walk.seed, identity(), 0, false, true));
+    walk.done = true;
+    walk.prev = gray;
+    return;
+  }
+  const quad = walk.seed.map((point) => apply(homography, point[0], point[1])) as Quad;
+  const used = good.filter(Boolean).length / good.length;
+  const [cx, cy] = center(quad);
+  const finite = quad.every((point) => Number.isFinite(point[0]) && Number.isFinite(point[1]));
+  const visible = finite && cx >= 0 && cy >= 0 && cx < gray.width && cy < gray.height;
+  walk.poses.set(index, makePose(index, finite ? quad : walk.seed, homography, used, visible, used < 0.45 || !finite));
+  walk.points = tracked;
+  walk.prev = gray;
+  walk.index = index;
+}
+
+export function posesFromWalks(forward: Walk, backward: Walk, frameCount: number, scaleUp: number): FramePose[] {
+  const merged = Array.from({ length: frameCount }, (_, index) =>
+    mergePose(index, forward.seedIndex, forward.poses.get(index), backward.poses.get(index)),
+  );
+  const cuts = new Set<number>([...forward.cuts, ...backward.cuts]);
+  return smooth(merged, cuts).map((pose) => ({
+    ...pose,
+    quad: scaleQuad(pose.quad, scaleUp),
+  }));
 }
 
 export function paintQuad(
@@ -85,8 +169,10 @@ export function paintQuad(
   text: string,
   style: TextTrack["style"],
 ) {
+  if (!quad.every((point) => Number.isFinite(point[0]) && Number.isFinite(point[1]))) return;
   const width = Math.max(8, Math.hypot(quad[1][0] - quad[0][0], quad[1][1] - quad[0][1]));
   const height = Math.max(8, Math.hypot(quad[3][0] - quad[0][0], quad[3][1] - quad[0][1]));
+  if (width * height > context.canvas.width * context.canvas.height * 0.92) return;
   const source = document.createElement("canvas");
   source.width = Math.ceil(width);
   source.height = Math.ceil(height);
@@ -132,14 +218,18 @@ export function paintQuad(
   context.putImageData(image, bounds.x, bounds.y);
 }
 
-function propagate(frames: Gray[], seed: Quad, seedIndex: number, direction: 1 | -1) {
-  const poses = new Map<number, FramePose>();
-  const identity = [
+function identity() {
+  return [
     [1, 0, 0],
     [0, 1, 0],
     [0, 0, 1],
   ];
-  poses.set(seedIndex, makePose(seedIndex, seed, identity, 1, true, false));
+}
+
+function propagate(frames: Gray[], seed: Quad, seedIndex: number, direction: 1 | -1) {
+  const poses = new Map<number, FramePose>();
+  const identityMatrix = identity();
+  poses.set(seedIndex, makePose(seedIndex, seed, identityMatrix, 1, true, false));
   const reference = samplePoints(seed);
   let points = reference.map((point) => [...point] as Point);
   let index = seedIndex;
@@ -150,7 +240,7 @@ function propagate(frames: Gray[], seed: Quad, seedIndex: number, direction: 1 |
     const good = points.map((point, pointIndex) => distance(point, back[pointIndex]) < 1.5);
     const homography = fitHomography(reference, tracked, good);
     if (!homography) {
-      poses.set(next, makePose(next, seed, identity, 0, false, true));
+      poses.set(next, makePose(next, seed, identityMatrix, 0, false, true));
       break;
     }
     const quad = seed.map((point) => apply(homography, point[0], point[1])) as Quad;

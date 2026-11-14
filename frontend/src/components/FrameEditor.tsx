@@ -44,7 +44,7 @@ export function FrameEditor({
   }, [selected?.id, paused]);
 
   return (
-    <aside className="flex h-full min-h-[280px] flex-col border-t border-line bg-panel lg:border-t-0 lg:border-l">
+    <aside className="editor-panel flex h-full min-h-[280px] flex-col border-t border-line bg-panel lg:border-t-0 lg:border-l">
       <div className="border-b border-line px-4 py-4">
         <p className="text-[11px] uppercase tracking-[0.18em] text-lime">Text editor</p>
         <h2 className="mt-1 font-serif text-4xl italic leading-none text-paper">Edit this frame</h2>
