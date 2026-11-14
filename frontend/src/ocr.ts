@@ -114,20 +114,20 @@ async function readFrameNow(
   for (const block of result.data.blocks ?? []) {
     for (const paragraph of block.paragraphs ?? []) {
       for (const line of paragraph.lines ?? []) {
-        const kept: string[] = [];
+        const kept: Array<{ text: string; bbox: { x0: number; y0: number; x1: number; y1: number } }> = [];
         for (const word of line.words ?? []) {
           const text = word.text.replace(/\s+/g, " ").trim();
           if (!keepText(text, word.confidence)) continue;
-          kept.push(text);
-          found.push(wordSpot(word.bbox, text, context, toSourceX, toSourceY));
+          kept.push({ text, bbox: word.bbox });
         }
-        const lineText = (line.text || "").replace(/\s+/g, " ").trim();
-        if (
-          keepText(lineText, line.confidence) &&
-          kept.join(" ") !== lineText &&
-          !kept.join(" ").includes(lineText)
-        ) {
-          found.push(wordSpot(line.bbox, lineText, context, toSourceX, toSourceY));
+        if (kept.length > 1) {
+          const x0 = Math.min(...kept.map((word) => word.bbox.x0));
+          const y0 = Math.min(...kept.map((word) => word.bbox.y0));
+          const x1 = Math.max(...kept.map((word) => word.bbox.x1));
+          const y1 = Math.max(...kept.map((word) => word.bbox.y1));
+          found.push(wordSpot({ x0, y0, x1, y1 }, kept.map((word) => word.text).join(" "), context, toSourceX, toSourceY));
+        } else if (kept.length === 1) {
+          found.push(wordSpot(kept[0].bbox, kept[0].text, context, toSourceX, toSourceY));
         }
       }
     }

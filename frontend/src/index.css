@@ -61,7 +61,7 @@ input {
 .workspace {
   min-height: 0;
   display: grid;
-  grid-template-rows: minmax(0, 1fr) 148px;
+  grid-template-rows: minmax(240px, 1fr) auto;
 }
 
 @media (max-width: 1040px) {
@@ -73,6 +73,16 @@ input {
   }
 
   .workspace {
+    order: 1;
     min-height: 70vh;
+    grid-template-rows: minmax(320px, 62vh) auto;
+  }
+
+  .upload-panel {
+    order: 2;
+  }
+
+  .editor-panel {
+    order: 3;
   }
 }
