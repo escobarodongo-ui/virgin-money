@@ -33,16 +33,17 @@ export function uploadVideo(
       if (event.lengthComputable) onProgress(event.loaded / event.total);
     };
     xhr.onload = () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        resolve(JSON.parse(xhr.responseText));
+      let payload: { project?: Project; job?: Job; detail?: string } | null = null;
+      try {
+        payload = JSON.parse(xhr.responseText);
+      } catch {
+        payload = null;
+      }
+      if (xhr.status >= 200 && xhr.status < 300 && payload?.project && payload.job) {
+        resolve({ project: payload.project, job: payload.job });
         return;
       }
-      let detail = xhr.statusText;
-      try {
-        detail = JSON.parse(xhr.responseText).detail || detail;
-      } catch {
-        /* ignore */
-      }
+      const detail = payload?.detail || "The processing service did not accept that video.";
       reject(new ApiError(xhr.status, detail));
     };
     xhr.onerror = () => reject(new ApiError(0, "Upload failed. Is the API running?"));

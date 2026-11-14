@@ -46,6 +46,8 @@ export type Project = {
   proxy_height: number | null;
   region_count: number;
   warnings: Warning[];
+  /** Browser object URL used when the processing API is not what plays the clip. */
+  local_url?: string;
 };
 
 export type Stage = {

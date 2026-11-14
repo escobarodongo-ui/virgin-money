@@ -75,9 +75,10 @@ export function Player({ project, regions, frame, selectedId, onSelect, onFrame 
     <div className="relative h-full min-h-[280px] bg-black">
       <div ref={stageRef} className="absolute inset-0">
         <video
+          key={project.local_url ?? project.id}
           ref={videoRef}
           className="h-full w-full object-contain bg-black"
-          src={`/api/projects/${project.id}/media/proxy`}
+          src={project.local_url ?? `/api/projects/${project.id}/media/proxy`}
           playsInline
           onPlay={() => setPlaying(true)}
           onPause={() => setPlaying(false)}

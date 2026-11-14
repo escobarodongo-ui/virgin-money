@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  ApiError,
   cancelJob,
   getJob,
   getProject,
@@ -13,6 +12,7 @@ import { Inspector } from "./components/Inspector";
 import { Player } from "./components/Player";
 import { Stages } from "./components/Stages";
 import { Timeline } from "./components/Timeline";
+import { localBundle, readLocalVideo } from "./localPreview";
 import type { Job, Project, Region, Warning } from "./types";
 
 const ACCEPT = ".mp4,.mov,.webm,.mkv,video/mp4,video/quicktime,video/webm,video/x-matroska";
@@ -28,6 +28,8 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const uploadSeq = useRef(0);
+  const localUrl = useRef<string | null>(null);
 
   const applyBundle = useCallback((nextProject: Project, nextJob: Job) => {
     setProject(nextProject);
@@ -46,7 +48,14 @@ export default function App() {
       try {
         const [nextJob, nextProject] = await Promise.all([getJob(job.id), getProject(job.project_id)]);
         if (stop) return;
-        setProject(nextProject);
+        setProject((current) => {
+          const keepLocal = Boolean(current?.local_url) && !nextProject.proxy_ready;
+          if (current?.local_url && nextProject.proxy_ready) {
+            URL.revokeObjectURL(current.local_url);
+            if (localUrl.current === current.local_url) localUrl.current = null;
+          }
+          return { ...nextProject, local_url: keepLocal ? current?.local_url : undefined };
+        });
         if (nextJob.status === "failed") setError(nextJob.error || "The job failed.");
         setJob(nextJob);
       } catch (err) {
@@ -62,7 +71,7 @@ export default function App() {
   }, [job?.id, job?.status]);
 
   useEffect(() => {
-    if (!project || job?.status !== "completed") return;
+    if (!project || project.local_url || project.id.startsWith("local") || job?.status !== "completed") return;
     let stop = false;
     getRegions(project.id)
       .then((found) => {
@@ -77,18 +86,56 @@ export default function App() {
     return () => {
       stop = true;
     };
-  }, [project?.id, job?.status]);
+  }, [project?.id, project?.local_url, job?.status]);
+
+  function rememberLocalUrl(url: string | null) {
+    if (localUrl.current && localUrl.current !== url) URL.revokeObjectURL(localUrl.current);
+    localUrl.current = url;
+  }
 
   async function takeFile(file: File) {
-    setUploadProgress(0);
+    const seq = ++uploadSeq.current;
     setError(null);
+    setUploadProgress(0);
+    let media;
     try {
-      const created = await uploadVideo(file, setUploadProgress);
-      applyBundle(created.project, created.job);
+      media = await readLocalVideo(file);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Upload failed.");
-    } finally {
+      if (seq !== uploadSeq.current) return;
       setUploadProgress(null);
+      setError(err instanceof Error ? err.message : "Could not open that video.");
+      return;
+    }
+    if (seq !== uploadSeq.current) {
+      URL.revokeObjectURL(media.url);
+      return;
+    }
+    rememberLocalUrl(media.url);
+    const preview = localBundle(file, media);
+    applyBundle(preview.project, preview.job);
+    setUploadProgress(null);
+    try {
+      const created = await uploadVideo(file, (fraction) => {
+        if (seq === uploadSeq.current) setUploadProgress(fraction);
+      });
+      if (seq !== uploadSeq.current) return;
+      if (created.project.proxy_ready) rememberLocalUrl(null);
+      applyBundle(
+        { ...created.project, local_url: created.project.proxy_ready ? undefined : media.url },
+        created.job,
+      );
+    } catch {
+      if (seq !== uploadSeq.current) return;
+      setJob((current) =>
+        current
+          ? {
+              ...current,
+              message: "Your video is in the editor. Text detection did not run, so there are no boxes yet.",
+            }
+          : current,
+      );
+    } finally {
+      if (seq === uploadSeq.current) setUploadProgress(null);
     }
   }
 
@@ -242,7 +289,7 @@ export default function App() {
       </aside>
 
       <main className="workspace min-w-0 bg-black">
-        {project?.proxy_ready && project.width && project.fps && project.frame_count ? (
+        {(project?.local_url || project?.proxy_ready) && project.width && project.fps && project.frame_count ? (
           <>
             <Player
               project={project}
