@@ -330,23 +330,29 @@ function fitHomography(src: Point[], dst: Point[], good: boolean[]) {
 }
 
 function pick4<T>(items: T[], salt: number): T[] {
-  const chosen: T[] = [];
-  const used = new Set<number>();
-  for (let step = 0; chosen.length < 4 && step < items.length; step += 1) {
-    const index = (salt + step * 5) % items.length;
-    if (used.has(index)) continue;
-    used.add(index);
-    chosen.push(items[index]);
+  const indexes = items.map((_, index) => index);
+  let state = (Math.abs(salt) + 1) >>> 0;
+  for (let index = indexes.length - 1; index > 0; index -= 1) {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+    const swap = state % (index + 1);
+    const current = indexes[index];
+    indexes[index] = indexes[swap];
+    indexes[swap] = current;
   }
-  return chosen;
+  return indexes.slice(0, Math.min(4, indexes.length)).map((index) => items[index]);
 }
 
 function homographyOf(src: Quad, dst: Quad): number[][] | null {
+  if (src.length < 4 || dst.length < 4) return null;
   const rows: number[][] = [];
   const target: number[] = [];
   for (let index = 0; index < 4; index += 1) {
-    const [x, y] = src[index];
-    const [u, v] = dst[index];
+    const srcPoint = src[index];
+    const dstPoint = dst[index];
+    if (!srcPoint || !dstPoint) return null;
+    const [x, y] = srcPoint;
+    const [u, v] = dstPoint;
+    if (![x, y, u, v].every((value) => Number.isFinite(value))) return null;
     rows.push([x, y, 1, 0, 0, 0, -u * x, -u * y]);
     target.push(u);
     rows.push([0, 0, 0, x, y, 1, -v * x, -v * y]);
