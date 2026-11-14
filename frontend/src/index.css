@@ -33,6 +33,23 @@ input {
   font: inherit;
 }
 
+.edit-cover {
+  container-type: size;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.01em;
+}
+
+.edit-cover span {
+  font-size: min(72cqh, 28cqw);
+  white-space: nowrap;
+  max-width: 100%;
+}
+
 .shell {
   display: grid;
   grid-template-columns: 292px minmax(0, 1fr) 332px;
