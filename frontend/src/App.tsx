@@ -16,9 +16,11 @@ import { downloadCleanVideo } from "./exportVideo";
 import { localBundle, readLocalVideo } from "./localPreview";
 import { captureFrame, readFrame, sampleInk } from "./ocr";
 import { DEFAULT_FONT, DEFAULT_WEIGHT, newSpotId, normText, showsReplacement, type Lock, type Spot } from "./spots";
+import { findScenes, sceneAt, type ClipScene } from "./scenes";
 import {
   boxToQuad,
   finishTrack,
+  holdPoses,
   poseAt,
   posesFromWalks,
   readGray,
@@ -51,6 +53,9 @@ export default function App() {
   const [spots, setSpots] = useState<Spot[]>([]);
   const [locks, setLocks] = useState<Lock[]>([]);
   const [tracks, setTracks] = useState<TextTrack[]>([]);
+  const [scenes, setScenes] = useState<ClipScene[]>([]);
+  const [readingScenes, setReadingScenes] = useState(false);
+  const scenesRef = useRef<ClipScene[]>([]);
   const [spotId, setSpotId] = useState<string | null>(null);
   const [paused, setPaused] = useState(false);
   const [reading, setReading] = useState(false);
@@ -64,6 +69,7 @@ export default function App() {
   spotsRef.current = spots;
   locksRef.current = locks;
   tracksRef.current = tracks;
+  scenesRef.current = scenes;
 
   useEffect(() => {
     if (!project?.id || tracks.length === 0) return;
@@ -211,10 +217,55 @@ export default function App() {
       restored = [];
     }
     setTracks(restored);
+    setScenes([]);
     setSpotId(null);
     setPaused(false);
     matched.current.clear();
   }, [project?.id]);
+
+  useEffect(() => {
+    if (!project?.width || !project.fps || !project.frame_count) return;
+    const visible = videoRef.current;
+    if (!visible) return;
+    let stop = false;
+    const run = async () => {
+      const src = visible.currentSrc;
+      if (!src || stop) return;
+      setReadingScenes(true);
+      const video = document.createElement("video");
+      video.muted = true;
+      video.playsInline = true;
+      video.preload = "auto";
+      video.src = src;
+      try {
+        await new Promise<void>((resolve, reject) => {
+          video.onloadeddata = () => resolve();
+          video.onerror = () => reject(new Error("Could not read the screens."));
+        });
+        if (stop) return;
+        const found = await findScenes(video, project.fps!, project.frame_count!);
+        if (!stop) setScenes(found);
+      } catch {
+        if (!stop) setScenes([]);
+      } finally {
+        video.removeAttribute("src");
+        video.load();
+        if (!stop) setReadingScenes(false);
+      }
+    };
+    if (visible.readyState >= 1 && visible.currentSrc) void run();
+    else visible.addEventListener("loadeddata", () => void run(), { once: true });
+    return () => {
+      stop = true;
+    };
+  }, [project?.id, project?.fps, project?.frame_count, project?.width]);
+
+  function openScene(scene: ClipScene) {
+    const video = videoRef.current;
+    if (video && !video.paused) video.pause();
+    setPaused(true);
+    setFrame(scene.startFrame);
+  }
 
   useEffect(() => {
     if (!paused || !project?.width || !project.height) return;
@@ -419,18 +470,47 @@ export default function App() {
   }
 
     const trackKey = tracks
-    .filter((track) => track.original_text.trim() && track.frames.length < (project?.frame_count ?? 0))
-    .map((track) => track.id)
+    .filter((track) => {
+      if (!track.original_text.trim()) return false;
+      const scene = sceneAt(scenes, track.start_frame);
+      const span = scene ? scene.endFrame - scene.startFrame + 1 : project?.frame_count ?? 0;
+      return track.frames.length < span;
+    })
+    .map((track) => `${track.id}:${sceneAt(scenes, track.start_frame)?.id ?? "all"}`)
     .join(",");
 
   useEffect(() => {
-    if (!trackKey || !project?.width || !project.height || !project.fps || !project.frame_count) return;
+    if (readingScenes || !trackKey || !project?.width || !project.height || !project.fps || !project.frame_count) return;
     const src = videoRef.current?.currentSrc;
     if (!src) return;
-    const pending = tracksRef.current.filter((track) => trackKey.split(",").includes(track.id));
+    const pendingIds = new Set(trackKey.split(",").map((item) => item.split(":")[0]));
+    const pending = tracksRef.current.filter((track) => pendingIds.has(track.id));
     const signal = { stopped: false };
     setLocking(0);
     void (async () => {
+      const held = new Map<string, ReturnType<typeof holdPoses>>();
+      const moving = pending.filter((track) => {
+        const scene = sceneAt(scenesRef.current, track.start_frame);
+        const quad = track.frames.find((pose) => pose.visible)?.quad ?? track.reference_quad;
+        if (scene && !scene.moving) {
+          held.set(track.id, holdPoses(quad, scene.startFrame, scene.endFrame));
+          return false;
+        }
+        return true;
+      });
+      const applyPoses = (extra: Map<string, ReturnType<typeof holdPoses>>) => {
+        setTracks((current) =>
+          current.map((track) => {
+            const poses = extra.get(track.id) ?? held.get(track.id);
+            return poses ? finishTrack(track, poses) : track;
+          }),
+        );
+      };
+      if (moving.length === 0) {
+        applyPoses(held);
+        setLocking(null);
+        return;
+      }
       const video = document.createElement("video");
       video.muted = true;
       video.playsInline = true;
@@ -440,8 +520,6 @@ export default function App() {
         video.onloadeddata = () => resolve();
         video.onerror = () => reject(new Error("Could not follow the text."));
       });
-      const walks = new Map<string, { forward: Walk; backward: Walk; scaleUp: number; seeded: boolean }>();
-      const frameCount = project.frame_count!;
       const readAt = async (index: number) => {
         const target = Math.min(Math.max(0, video.duration - 0.001), (index + 0.5) / project.fps!);
         if (Math.abs(video.currentTime - target) > 0.0005) {
@@ -452,48 +530,40 @@ export default function App() {
         await new Promise((resolve) => window.setTimeout(resolve, 0));
         return gray;
       };
-      for (const track of pending) {
+      const finished = new Map<string, ReturnType<typeof holdPoses>>();
+      for (const track of moving) {
+        if (signal.stopped) return;
+        const scene = sceneAt(scenesRef.current, track.start_frame);
+        const start = scene?.startFrame ?? 0;
+        const end = scene?.endFrame ?? project.frame_count! - 1;
         const seedQuad = track.frames.find((pose) => pose.visible)?.quad ?? track.reference_quad;
-        const seedIndex = track.frames.find((pose) => pose.visible)?.frame_index ?? track.start_frame;
-        const sample = await readAt(Math.min(seedIndex, frameCount - 1));
+        const seedIndex = Math.min(end, Math.max(start, track.frames.find((pose) => pose.visible)?.frame_index ?? track.start_frame));
+        const sample = await readAt(seedIndex);
         const scale = sample.width / project.width!;
-        walks.set(track.id, {
-          forward: startWalk(scaleQuad(seedQuad, scale), seedIndex, 1),
-          backward: startWalk(scaleQuad(seedQuad, scale), seedIndex, -1),
-          scaleUp: project.width! / sample.width,
-          seeded: false,
-        });
-      }
-      for (let index = 0; index < frameCount; index += 1) {
-        if (signal.stopped) return;
-        const gray = await readAt(index);
-        for (const walk of walks.values()) {
-          if (index === walk.forward.seedIndex) {
-            walkFrame(walk.forward, gray, index);
-            walkFrame(walk.backward, gray, index);
-            walk.seeded = true;
-          } else if (walk.seeded && index > walk.forward.seedIndex) {
-            walkFrame(walk.forward, gray, index);
+        const forward: Walk = startWalk(scaleQuad(seedQuad, scale), seedIndex, 1);
+        const backward: Walk = startWalk(scaleQuad(seedQuad, scale), seedIndex, -1);
+        const span = end - start + 1;
+        for (let index = start; index <= end; index += 1) {
+          if (signal.stopped) return;
+          const gray = await readAt(index);
+          if (index === seedIndex) {
+            walkFrame(forward, gray, index);
+            walkFrame(backward, gray, index);
+          } else if (index > seedIndex) walkFrame(forward, gray, index);
+          setLocking((index - start + 1) / span / 2);
+        }
+        for (let index = end; index >= start; index -= 1) {
+          if (signal.stopped) return;
+          if (index < seedIndex) {
+            const gray = await readAt(index);
+            walkFrame(backward, gray, index);
           }
+          setLocking(0.5 + (end - index + 1) / span / 2);
         }
-        setLocking((index + 1) / frameCount / 2);
-      }
-      for (let index = frameCount - 1; index >= 0; index -= 1) {
-        if (signal.stopped) return;
-        const gray = await readAt(index);
-        for (const walk of walks.values()) {
-          if (index < walk.backward.seedIndex) walkFrame(walk.backward, gray, index);
-        }
-        setLocking(0.5 + (frameCount - index) / frameCount / 2);
+        finished.set(track.id, posesFromWalks(forward, backward, start, end, project.width! / sample.width));
       }
       if (signal.stopped) return;
-      setTracks((current) =>
-        current.map((track) => {
-          const walk = walks.get(track.id);
-          if (!walk) return track;
-          return finishTrack(track, posesFromWalks(walk.forward, walk.backward, frameCount, walk.scaleUp));
-        }),
-      );
+      applyPoses(finished);
       setLocking(null);
       video.removeAttribute("src");
       video.load();
@@ -505,7 +575,7 @@ export default function App() {
     return () => {
       signal.stopped = true;
     };
-  }, [trackKey, project?.id, project?.width, project?.height, project?.fps, project?.frame_count]);
+  }, [trackKey, readingScenes, project?.id, project?.width, project?.height, project?.fps, project?.frame_count, scenes]);
 
   async function onDownload() {
     const video = videoRef.current;
@@ -683,9 +753,12 @@ export default function App() {
               frameCount={frameCount}
               fps={fps}
               regions={regions}
+              scenes={scenes}
+              readingScenes={readingScenes}
               selectedId={selectedId}
               onSeek={setFrame}
               onSelect={setSelectedId}
+              onOpenScene={openScene}
             />
           </>
         ) : (

@@ -1,4 +1,5 @@
 import type { MouseEvent } from "react";
+import { formatClock, type ClipScene } from "../scenes";
 import type { Region } from "../types";
 
 type Props = {
@@ -6,12 +7,15 @@ type Props = {
   frameCount: number;
   fps: number;
   regions: Region[];
+  scenes: ClipScene[];
+  readingScenes: boolean;
   selectedId: string | null;
   onSeek: (frame: number) => void;
   onSelect: (id: string) => void;
+  onOpenScene: (scene: ClipScene) => void;
 };
 
-export function Timeline({ frame, frameCount, fps, regions, selectedId, onSeek, onSelect }: Props) {
+export function Timeline({ frame, frameCount, fps, regions, scenes, readingScenes, selectedId, onSeek, onSelect, onOpenScene }: Props) {
   const lanes = pack(regions);
   const span = Math.max(frameCount - 1, 1);
   return (
@@ -29,8 +33,24 @@ export function Timeline({ frame, frameCount, fps, regions, selectedId, onSeek, 
         <div className="absolute inset-y-0 left-0 bg-lime/30" style={{ width: `${(frame / span) * 100}%` }} />
         <div className="absolute top-0 h-full w-px bg-lime" style={{ left: `${(frame / span) * 100}%` }} />
       </div>
+      <div className="mt-2 flex flex-wrap gap-1">
+        {readingScenes && <p className="text-sm text-muted">Splitting the clip into screens…</p>}
+        {scenes.map((scene, index) => {
+          const active = frame >= scene.startFrame && frame <= scene.endFrame;
+          return (
+            <button
+              key={scene.id}
+              type="button"
+              onClick={() => onOpenScene(scene)}
+              className={`px-2 py-1 text-left text-[12px] ${active ? "bg-lime text-ink" : "bg-panel-2 text-paper hover:bg-line"}`}
+            >
+              Screen {index + 1} · {formatClock(scene.startTime)}–{formatClock(scene.endTime)} · {scene.moving ? "scrolling" : "still"}
+            </button>
+          );
+        })}
+      </div>
       <div className="mt-2 space-y-1">
-        {lanes.length === 0 && <p className="text-sm text-muted">Regions show up here once detection finishes.</p>}
+        {lanes.length === 0 && <p className="text-sm text-muted">Pause a screen, then pick a line to change.</p>}
         {lanes.map((lane, index) => (
           <div key={index} className="relative h-6">
             {lane.map((region) => {

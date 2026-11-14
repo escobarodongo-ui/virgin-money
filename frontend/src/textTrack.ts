@@ -152,15 +152,23 @@ export function walkFrame(walk: Walk, gray: Gray, index: number) {
   walk.index = index;
 }
 
-export function posesFromWalks(forward: Walk, backward: Walk, frameCount: number, scaleUp: number): FramePose[] {
-  const merged = Array.from({ length: frameCount }, (_, index) =>
-    mergePose(index, forward.seedIndex, forward.poses.get(index), backward.poses.get(index)),
-  );
+export function posesFromWalks(forward: Walk, backward: Walk, start: number, end: number, scaleUp: number): FramePose[] {
+  const merged = Array.from({ length: end - start + 1 }, (_, offset) => {
+    const index = start + offset;
+    return mergePose(index, forward.seedIndex, forward.poses.get(index), backward.poses.get(index));
+  });
   const cuts = new Set<number>([...forward.cuts, ...backward.cuts]);
   return smooth(merged, cuts).map((pose) => ({
     ...pose,
     quad: scaleQuad(pose.quad, scaleUp),
   }));
+}
+
+export function holdPoses(quad: Quad, start: number, end: number): FramePose[] {
+  const homography = identity();
+  const poses: FramePose[] = [];
+  for (let index = start; index <= end; index += 1) poses.push(makePose(index, quad, homography, 1, true, false));
+  return poses;
 }
 
 export function paintQuad(
