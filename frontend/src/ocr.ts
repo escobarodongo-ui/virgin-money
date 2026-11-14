@@ -1,9 +1,19 @@
 import { createWorker, PSM } from "tesseract.js";
-import type { Spot } from "./spots";
+import { DEFAULT_FONT, DEFAULT_WEIGHT, type Spot } from "./spots";
 
 type Worker = Awaited<ReturnType<typeof createWorker>>;
 
 let workerPromise: Promise<Worker> | null = null;
+let tail: Promise<unknown> = Promise.resolve();
+
+function queue<T>(job: () => Promise<T>): Promise<T> {
+  const run = tail.then(job, job);
+  tail = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run;
+}
 
 function worker() {
   if (!workerPromise) {
@@ -47,7 +57,7 @@ function wordSpot(
     w: bbox.x1 - bbox.x0,
     h: bbox.y1 - bbox.y0,
   });
-  return { box, original: text, ...ink };
+  return { box, original: text, ...ink, fontFamily: DEFAULT_FONT, fontWeight: DEFAULT_WEIGHT, angle: 0 };
 }
 
 export async function warmFrame(video: HTMLVideoElement) {
@@ -72,11 +82,19 @@ function isBlank(video: HTMLVideoElement) {
   return sum / (24 * 24) < 12;
 }
 
-export async function readFrame(
+export function readFrame(
   video: HTMLVideoElement,
   sourceWidth: number,
   sourceHeight: number,
-): Promise<Array<Pick<Spot, "box" | "original" | "color" | "background">>> {
+): Promise<Array<Pick<Spot, "box" | "original" | "color" | "background" | "fontFamily" | "fontWeight" | "angle">>> {
+  return queue(() => readFrameNow(video, sourceWidth, sourceHeight));
+}
+
+async function readFrameNow(
+  video: HTMLVideoElement,
+  sourceWidth: number,
+  sourceHeight: number,
+): Promise<Array<Pick<Spot, "box" | "original" | "color" | "background" | "fontFamily" | "fontWeight" | "angle">>> {
   await warmFrame(video);
   const mediaWidth = video.videoWidth || sourceWidth;
   const mediaHeight = video.videoHeight || sourceHeight;
@@ -91,7 +109,7 @@ export async function readFrame(
   const result = await (await worker()).recognize(canvas, {}, { blocks: true, text: true });
   const toSourceX = sourceWidth / canvas.width;
   const toSourceY = sourceHeight / canvas.height;
-  const found: Array<Pick<Spot, "box" | "original" | "color" | "background">> = [];
+  const found: Array<Pick<Spot, "box" | "original" | "color" | "background" | "fontFamily" | "fontWeight" | "angle">> = [];
 
   for (const block of result.data.blocks ?? []) {
     for (const paragraph of block.paragraphs ?? []) {
